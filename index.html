@@ -1,0 +1,1201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Water Tracker</title>
+<link rel="manifest" href="./manifest.json">
+<meta name="theme-color" content="#071119">
+<link rel="icon" href="./icon-192.png">
+<link rel="apple-touch-icon" href="./icon-512.png">
+<style>
+  :root{
+    --bg:#071119;
+    --bg2:#0B1B26;
+    --panel:#0E1F2B;
+    --panel2:#0A1820;
+    --line:#1B303C;
+    --steel:#5C7A8A;
+    --water:#1FA7C9;
+    --water2:#0E7FA3;
+    --water-glow:#4FD3F0;
+    --safe:#2ECC8F;
+    --warn:#F0A93B;
+    --crit:#E8503C;
+    --text:#EAF2F5;
+    --text-dim:#7E97A3;
+    --page-bg:
+      radial-gradient(ellipse 900px 500px at 15% -10%, rgba(31,167,201,.10), transparent 60%),
+      radial-gradient(ellipse 700px 500px at 100% 0%, rgba(46,204,143,.05), transparent 55%),
+      var(--bg);
+    --mono: 'SF Mono', 'Roboto Mono', 'Consolas', 'Menlo', monospace;
+    --sans: -apple-system, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+    color-scheme: dark;
+  }
+  html[data-theme="light"]{
+    --bg:#EAF7FB;
+    --bg2:#FFFFFF;
+    --panel:#FFFFFF;
+    --panel2:#F1FBFE;
+    --line:#CDEBF3;
+    --steel:#5B90A3;
+    --water:#00AEEF;
+    --water2:#0090C9;
+    --water-glow:#00C2E0;
+    --safe:#16A34A;
+    --warn:#E08E00;
+    --crit:#E14A3A;
+    --text:#082B37;
+    --text-dim:#5B7F8C;
+    --page-bg:
+      radial-gradient(ellipse 1000px 560px at 10% -10%, rgba(0,194,224,.20), transparent 60%),
+      radial-gradient(ellipse 800px 560px at 100% 0%, rgba(22,163,74,.10), transparent 55%),
+      linear-gradient(180deg, #F3FCFE, #E3F5FA 40%, #D7F0F8);
+    color-scheme: light;
+  }
+  *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
+  html,body{
+    margin:0; padding:0; min-height:100%;
+    background: var(--page-bg);
+    color:var(--text);
+    font-family:var(--sans);
+    overscroll-behavior:none;
+    transition: background .25s ease, color .25s ease;
+  }
+  body, .card, .status, .metric, .histrow, .ratefield, .editfield, .btn-ghost{
+    transition: background .25s ease, border-color .25s ease, color .25s ease;
+  }
+  .wrap{
+    max-width:520px;
+    margin:0 auto;
+    padding:20px 16px 40px;
+    display:flex;
+    flex-direction:column;
+    gap:14px;
+  }
+  .eyebrow{
+    font-family:var(--mono); font-size:10.5px; letter-spacing:.18em;
+    color:var(--steel); text-transform:uppercase; margin-bottom:2px;
+  }
+  h1{ font-size:21px; font-weight:700; margin:0 0 2px; letter-spacing:-0.01em; }
+  .sub{ font-size:12px; color:var(--text-dim); margin:0 0 6px; }
+
+  .headrow{ display:flex; align-items:flex-start; justify-content:space-between; gap:12px; }
+  .headbtns{ display:flex; gap:8px; }
+  .themebtn{
+    flex:0 0 auto; display:flex; align-items:center; gap:6px;
+    background:var(--panel2); border:1px solid var(--line); border-radius:20px;
+    padding:7px 12px 7px 8px; cursor:pointer; margin-top:2px;
+  }
+  .themebtn.iconOnly{ padding:7px; }
+  .themebtn .icon-wrap{
+    width:20px; height:20px; border-radius:50%; display:flex; align-items:center; justify-content:center;
+    background:var(--water); font-size:11px;
+  }
+  .themebtn .icon-wrap.gear{ background:var(--panel); color:var(--water); border:1px solid var(--line); font-size:13px; }
+  .themebtn span.label{ font-family:var(--mono); font-size:10.5px; color:var(--text-dim); letter-spacing:.04em; }
+
+  /* ---- settings modal ---- */
+  .modalOverlay{
+    position:fixed; inset:0; z-index:500;
+    background:rgba(2,10,15,.6);
+    display:flex; align-items:flex-end; justify-content:center;
+    opacity:0; visibility:hidden; transition:opacity .2s ease, visibility .2s ease;
+  }
+  .modalOverlay.show{ opacity:1; visibility:visible; }
+  .modalCard{
+    width:100%; max-width:520px;
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    border:1px solid var(--line); border-top-left-radius:22px; border-top-right-radius:22px;
+    padding:18px 18px 26px;
+    transform:translateY(20px); transition:transform .25s ease;
+    max-height:86vh; overflow-y:auto;
+  }
+  .modalOverlay.show .modalCard{ transform:translateY(0); }
+  .modalHead{ display:flex; align-items:center; justify-content:space-between; font-weight:700; font-size:16px; margin-bottom:6px; }
+  .modalClose{ background:var(--panel2); border:1px solid var(--line); color:var(--text-dim); width:28px; height:28px; border-radius:50%; font-size:14px; cursor:pointer; }
+  .modalSub{ font-size:12px; color:var(--text-dim); line-height:1.5; margin:0 0 14px; }
+  .sectionLbl{ font-family:var(--mono); font-size:10px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); margin-bottom:8px; }
+  .thresholdPreview{ margin-top:10px; font-size:12px; color:var(--text-dim); background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:10px 12px; line-height:1.6; }
+  .thresholdPreview b{ color:var(--water-glow); }
+
+  .card{
+    background:linear-gradient(180deg, var(--panel), var(--panel2));
+    border:1px solid var(--line);
+    border-radius:16px;
+    padding:16px;
+    position:relative;
+    overflow:hidden;
+  }
+  .card::before{
+    content:"";
+    position:absolute; inset:0;
+    background:linear-gradient(120deg, rgba(255,255,255,.03), transparent 40%);
+    pointer-events:none;
+  }
+
+  .cardhead{ display:flex; align-items:center; justify-content:space-between; margin-bottom:10px; }
+  .cardheadlbl{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); }
+  .helpbtn{
+    width:26px; height:26px; border-radius:50%; flex:0 0 26px;
+    background:var(--panel2); border:1px solid var(--line); color:var(--water);
+    font-family:var(--mono); font-weight:700; font-size:13px; cursor:pointer;
+    display:flex; align-items:center; justify-content:center; padding:0;
+  }
+  .helpbtn:active{ transform:scale(.93); }
+  .helpbtn.active{ background:var(--water); color:#04212B; border-color:var(--water); }
+  .helpbox{
+    display:none; font-size:12.5px; line-height:1.55; color:var(--text-dim);
+    background:var(--bg2); border:1px solid var(--line); border-radius:12px;
+    padding:11px 13px; margin-bottom:12px;
+  }
+  .helpbox.show{ display:block; }
+
+  /* ---- Stage: tank + input ---- */
+  .stage{ display:flex; gap:14px; align-items:stretch; }
+  .tankbox{
+    flex:0 0 84px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .inputbox{ flex:1; display:flex; flex-direction:column; justify-content:center; padding:2px 0; }
+  .inputbox label{
+    font-family:var(--mono); font-size:10px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--text-dim); margin-bottom:8px;
+  }
+  .inputrow{
+    display:flex; align-items:baseline; gap:6px;
+    background:var(--bg2); border:1.5px solid var(--line); border-radius:12px;
+    padding:12px 16px;
+    transition:border-color .15s ease, box-shadow .15s ease;
+  }
+  .inputrow:focus-within{
+    border-color:var(--water);
+    box-shadow:0 0 0 3px rgba(31,167,201,.18);
+  }
+  input[type=number]{
+    appearance:none; background:transparent; border:none; color:var(--text);
+    font-family:var(--mono); font-size:42px; font-weight:600; width:100%;
+    outline:none; padding:0; letter-spacing:-0.01em;
+  }
+  input[type=number]::-webkit-outer-spin-button,
+  input[type=number]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+  input::placeholder{ color:#2C4048; }
+  .unit{ font-family:var(--mono); font-size:17px; color:var(--text-dim); flex:0 0 auto; }
+
+  /* ---- animated tank svg ---- */
+  .wave{ animation:waveMove 3.2s linear infinite; }
+  .wave2{ animation:waveMove 4.6s linear infinite reverse; opacity:.55; }
+  @keyframes waveMove{ from{ transform:translateX(0);} to{ transform:translateX(-52px);} }
+  .bubble{ animation:rise 5s ease-in infinite; opacity:0; }
+  @keyframes rise{
+    0%{ opacity:0; transform:translateY(0) scale(.6); }
+    10%{ opacity:.65; }
+    90%{ opacity:.35; }
+    100%{ opacity:0; transform:translateY(-70px) scale(1); }
+  }
+
+  /* ---- status ---- */
+  .status{
+    border-radius:14px; padding:13px 15px; display:flex; align-items:center; gap:12px;
+    border:1px solid var(--line); background:var(--panel2);
+    transition:border-color .25s ease, background .25s ease;
+  }
+  .status .dot{
+    width:10px; height:10px; border-radius:50%; flex:0 0 10px; background:var(--steel);
+    box-shadow:0 0 0 4px rgba(92,122,138,.15); transition:all .25s ease;
+  }
+  .status.safe{ border-color:rgba(46,204,143,.35); background:rgba(46,204,143,.07);}
+  .status.safe .dot{ background:var(--safe); box-shadow:0 0 0 4px rgba(46,204,143,.16);}
+  .status.warn{ border-color:rgba(240,169,59,.4); background:rgba(240,169,59,.09);}
+  .status.warn .dot{ background:var(--warn); box-shadow:0 0 0 4px rgba(240,169,59,.18); animation:pulse 1.4s ease-in-out infinite; }
+  .status.crit{ border-color:rgba(232,80,60,.5); background:rgba(232,80,60,.11);}
+  .status.crit .dot{ background:var(--crit); box-shadow:0 0 0 4px rgba(232,80,60,.22); animation:pulse 0.9s ease-in-out infinite; }
+  @keyframes pulse{ 0%,100%{ box-shadow:0 0 0 4px rgba(232,80,60,.22);} 50%{ box-shadow:0 0 0 8px rgba(232,80,60,.05);} }
+  .status .txt{ font-size:13px; line-height:1.35; }
+  .status .txt b{ display:block; font-size:14px; margin-bottom:1px; }
+
+  /* ---- result ---- */
+  .result{ text-align:center; padding:20px 16px; }
+  .result .lbl{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); margin-bottom:6px; }
+  .result .gal{ font-family:var(--mono); font-size:50px; font-weight:700; color:var(--water-glow); line-height:1; text-shadow:0 0 26px rgba(79,211,240,.25); }
+  .result .gal small{ font-size:19px; font-weight:500; color:var(--text-dim); margin-left:4px; }
+
+  /* ---- cost ---- */
+  .costhead{ display:flex; justify-content:space-between; align-items:center; margin-bottom:10px; }
+  .costhead .lbl{ font-family:var(--mono); font-size:10.5px; letter-spacing:.14em; text-transform:uppercase; color:var(--text-dim); }
+  .costamt{ font-family:var(--mono); font-size:30px; font-weight:700; color:var(--safe); }
+  .costamt small{ font-size:14px; color:var(--text-dim); font-weight:500; margin-left:3px;}
+  .costnote{ font-size:11.5px; color:var(--text-dim); line-height:1.5; margin-top:8px; }
+  .costnote b{ color:#C9D8DF; }
+  .ratefields{ display:grid; grid-template-columns:1fr 1fr; gap:10px; margin-top:12px; }
+  .ratefield{ background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:9px 11px; }
+  .ratefield label{ display:block; font-family:var(--mono); font-size:9.5px; color:var(--text-dim); letter-spacing:.06em; text-transform:uppercase; margin-bottom:4px;}
+  .ratefield .rowin{ display:flex; align-items:baseline; gap:4px; }
+  .ratefield input{
+    appearance:none; background:transparent; border:none; color:var(--text);
+    font-family:var(--mono); font-size:15px; font-weight:600; width:100%; outline:none; padding:0;
+  }
+  .togglerow{ display:flex; align-items:center; justify-content:space-between; margin-top:12px; padding-top:12px; border-top:1px solid var(--line); }
+  .togglerow .tl{ font-size:12.5px; color:var(--text-dim); }
+  .switch{ position:relative; width:42px; height:24px; flex:0 0 42px; }
+  .switch input{ opacity:0; width:0; height:0; }
+  .slider{ position:absolute; inset:0; background:#243944; border-radius:20px; transition:.2s; cursor:pointer; }
+  .slider::before{ content:""; position:absolute; width:18px; height:18px; left:3px; top:3px; background:#9FB4BE; border-radius:50%; transition:.2s; }
+  .switch input:checked + .slider{ background:var(--crit); }
+  .switch input:checked + .slider::before{ transform:translateX(18px); background:#fff; }
+
+  /* ---- metrics ---- */
+  .grid2{ display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  .grid3{ display:grid; grid-template-columns:1fr 1fr 1fr; gap:10px; }
+  .metric{ background:var(--panel2); border:1px solid var(--line); border-radius:12px; padding:11px 13px; }
+  .metric .lbl{ font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--text-dim); margin-bottom:5px; }
+  .metric .val{ font-family:var(--mono); font-size:17px; font-weight:600; }
+
+  /* ---- section headers ---- */
+  .sectitle{ display:flex; align-items:baseline; justify-content:space-between; margin-bottom:2px;}
+  .sectitle h2{ font-size:14px; margin:0; font-weight:700; }
+  .sectitle span{ font-family:var(--mono); font-size:10px; color:var(--text-dim); }
+
+  /* ---- buttons ---- */
+  .btnrow{ display:flex; gap:10px; }
+  button{
+    font-family:var(--sans); font-weight:600; font-size:13.5px; border:none; border-radius:12px;
+    padding:13px 14px; cursor:pointer; transition:transform .12s ease, opacity .12s ease;
+  }
+  button:active{ transform:scale(.97); }
+  .btn-primary{ background:linear-gradient(135deg, var(--water), var(--water2)); color:#04212B; flex:1; box-shadow:0 6px 18px rgba(31,167,201,.25); }
+  .btn-ghost{ background:var(--panel2); color:var(--text); border:1px solid var(--line); flex:1; }
+  .btn-ghost.small{ font-size:12px; padding:10px 12px; }
+  .btn-danger{ background:transparent; color:var(--crit); border:1px solid rgba(232,80,60,.35); }
+
+  /* ---- history ---- */
+  .histlist{ display:flex; flex-direction:column; gap:8px; max-height:220px; overflow-y:auto; margin-top:2px; }
+  .histrow{ display:flex; align-items:center; justify-content:space-between; background:var(--bg2); border:1px solid var(--line); border-radius:10px; padding:9px 12px; gap:8px; }
+  .histrow .l{ display:flex; flex-direction:column; min-width:0; }
+  .histrow .date{ font-size:11.5px; color:var(--text-dim); font-family:var(--mono); }
+  .histrow .meas{ font-size:13.5px; font-weight:600; }
+  .histrow .actions{ display:flex; gap:2px; flex:0 0 auto; }
+  .histrow .icon{ background:none; border:none; color:#5B7280; font-size:15px; padding:6px 7px; cursor:pointer; border-radius:8px; line-height:1; }
+  .histrow .icon:active{ background:rgba(255,255,255,.06); }
+  .histrow .icon.edit{ color:var(--water); }
+  .histrow .icon.del{ color:#C0655C; }
+  .editfield input[type=datetime-local]{ color-scheme: inherit; }
+  .histrow.editing{ flex-direction:column; align-items:stretch; gap:10px; }
+  .editform{ display:flex; flex-direction:column; gap:8px; }
+  .editrow{ display:flex; gap:8px; }
+  .editfield{ flex:1; background:var(--panel2); border:1px solid var(--line); border-radius:9px; padding:8px 10px; }
+  .editfield label{ display:block; font-family:var(--mono); font-size:9px; color:var(--text-dim); letter-spacing:.06em; text-transform:uppercase; margin-bottom:3px; }
+  .editfield input{ appearance:none; background:transparent; border:none; color:var(--text); font-family:var(--mono); font-size:13.5px; width:100%; outline:none; padding:0; }
+  .editbtns{ display:flex; gap:8px; }
+  .editbtns button{ flex:1; padding:9px 10px; font-size:12.5px; border-radius:9px; }
+  .btn-save{ background:var(--safe); color:#04291A; border:none; font-weight:700; }
+  .btn-cancel{ background:transparent; color:var(--text-dim); border:1px solid var(--line); }
+  .empty{ font-size:12.5px; color:var(--text-dim); text-align:center; padding:18px 0; }
+
+  /* ---- chart ---- */
+  .chartwrap{ margin-top:4px; }
+  .chartwrap svg{ width:100%; height:auto; display:block; }
+  .legend{ display:flex; gap:16px; margin-top:8px; font-size:10.5px; color:var(--text-dim); }
+  .legend .dot{ width:7px; height:7px; border-radius:50%; display:inline-block; margin-right:5px; }
+
+  .foot{ font-family:var(--mono); font-size:10px; color:#4C6470; line-height:1.7; padding-top:6px; }
+  .foot .row{ display:flex; justify-content:space-between; }
+
+  input[type=file]{ display:none; }
+
+  /* ---- update banner ---- */
+  .updateBanner{
+    position:fixed; top:0; left:0; right:0; z-index:600;
+    display:flex; align-items:center; justify-content:space-between; gap:10px;
+    background:linear-gradient(90deg, var(--safe), var(--water2));
+    color:#04211A; font-size:12.5px; font-weight:600;
+    padding:11px 16px; padding-top:calc(11px + env(safe-area-inset-top, 0px));
+    box-shadow:0 6px 18px rgba(0,0,0,.25);
+    animation: bannerDown .35s cubic-bezier(.2,.8,.2,1);
+  }
+  @keyframes bannerDown{ from{ transform:translateY(-100%); } to{ transform:translateY(0); } }
+  .updateBanner button{
+    background:rgba(4,33,26,.15); border:none; color:#04211A; font-weight:700;
+    width:24px; height:24px; border-radius:50%; padding:0; cursor:pointer; font-size:13px;
+  }
+
+  /* ---- splash screen ---- */
+  .splash{
+    position:fixed; inset:0; z-index:9999;
+    display:flex; flex-direction:column; align-items:center; justify-content:center; gap:16px;
+    background: var(--page-bg);
+    transition: opacity .45s ease, visibility .45s ease;
+  }
+  .splash.hide{ opacity:0; visibility:hidden; pointer-events:none; }
+  .splashTitle{
+    font-family:var(--sans); font-weight:700; font-size:17px; letter-spacing:.02em; color:var(--text);
+    opacity:0; animation:splashTitleIn .5s ease .5s forwards;
+  }
+  @keyframes splashTitleIn{ from{ opacity:0; transform:translateY(4px);} to{ opacity:1; transform:translateY(0);} }
+  #splashFill{ animation: dropFill 1.15s cubic-bezier(.35,0,.25,1) forwards; }
+  @keyframes dropFill{
+    from{ y:24; height:0; }
+    to{ y:2; height:22; }
+  }
+</style>
+</head>
+<body>
+
+<div class="splash" id="splashOverlay">
+  <svg width="72" height="72" viewBox="0 0 24 24">
+    <defs>
+      <linearGradient id="splashGrad" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="var(--water-glow)"/>
+        <stop offset="100%" stop-color="var(--water2)"/>
+      </linearGradient>
+      <clipPath id="dropClip">
+        <path d="M12 2C12 2 4 12.5 4 18a8 8 0 0 0 16 0c0-5.5-8-16-8-16z"/>
+      </clipPath>
+    </defs>
+    <path d="M12 2C12 2 4 12.5 4 18a8 8 0 0 0 16 0c0-5.5-8-16-8-16z" fill="none" stroke="var(--line)" stroke-width="1"/>
+    <g clip-path="url(#dropClip)">
+      <rect id="splashFill" x="0" y="24" width="24" height="0" fill="url(#splashGrad)"/>
+      <path id="splashWave" d="" fill="rgba(255,255,255,.22)" class="wave"/>
+    </g>
+  </svg>
+  <div class="splashTitle">Water Tracker</div>
+</div>
+
+<div class="wrap">
+
+
+  <div class="headrow">
+    <div>
+      <div class="eyebrow">Water Authority · Cayman Brac</div>
+      <h1>Water Tracker</h1>
+      <p class="sub" id="tankSubLabel">Tank replenishment · 103 × 103 × 57 in</p>
+    </div>
+    <div class="headbtns">
+      <button class="themebtn iconOnly" id="settingsToggle" aria-label="Tank settings">
+        <span class="icon-wrap gear">⚙</span>
+      </button>
+      <button class="themebtn" id="themeToggle">
+        <span class="icon-wrap" id="themeIcon">🌙</span>
+        <span class="label" id="themeLabel">Dark</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL -->
+  <div class="modalOverlay" id="settingsOverlay">
+    <div class="modalCard">
+      <div class="modalHead">
+        <span>Tank Settings</span>
+        <button class="modalClose" id="settingsCloseBtn">✕</button>
+      </div>
+      <p class="modalSub">Set this up for your own tank once — anyone you share this app with can change these to match theirs.</p>
+
+      <div class="sectionLbl">Tank Dimensions (inches)</div>
+      <div class="ratefields">
+        <div class="ratefield">
+          <label>Length</label>
+          <div class="rowin"><input type="number" id="setLen" step="0.5" min="1"></div>
+        </div>
+        <div class="ratefield">
+          <label>Width</label>
+          <div class="rowin"><input type="number" id="setWid" step="0.5" min="1"></div>
+        </div>
+        <div class="ratefield">
+          <label>Height</label>
+          <div class="rowin"><input type="number" id="setHeight" step="0.5" min="1"></div>
+        </div>
+        <div class="ratefield">
+          <label>Total Capacity</label>
+          <div class="rowin" style="color:var(--text-dim);"><span id="setCapacityPreview">—</span></div>
+        </div>
+      </div>
+
+      <div class="sectionLbl" style="margin-top:14px;">Safety Thresholds (inches, water to ceiling)</div>
+      <div class="ratefields">
+        <div class="ratefield">
+          <label>Warning starts at</label>
+          <div class="rowin"><input type="number" id="setWarn" step="0.5" min="0"></div>
+        </div>
+        <div class="ratefield">
+          <label>Pump shuts off at</label>
+          <div class="rowin"><input type="number" id="setCrit" step="0.5" min="0"></div>
+        </div>
+      </div>
+      <div class="thresholdPreview" id="thresholdPreview"></div>
+
+      <div class="btnrow" style="margin-top:16px;">
+        <button class="btn-ghost small" id="settingsResetBtn">Reset to Default Tank</button>
+        <button class="btn-primary" id="settingsSaveBtn" style="flex:1;">Save Settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- MEASURE -->
+  <div class="card">
+    <div class="cardhead">
+      <span class="cardheadlbl">Measurement</span>
+      <button class="helpbtn" id="helpBtn" aria-label="How to measure">?</button>
+    </div>
+    <div class="helpbox" id="helpBox">
+      Measure straight down from the underside of the tank's ceiling to the surface of the water, in inches. Type that number into the box below — you'll instantly see gallons to order, estimated cost, and your safety status.
+    </div>
+    <div class="stage">
+      <div class="tankbox">
+        <svg id="tankSvg" width="42" height="112" viewBox="0 0 42 112">
+          <defs>
+            <linearGradient id="waterGrad" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0%" stop-color="var(--water-glow)"/>
+              <stop offset="100%" stop-color="var(--water2)"/>
+            </linearGradient>
+          </defs>
+          <rect x="1.5" y="1.5" width="39" height="109" rx="6" fill="none" stroke="#33505E" stroke-width="2"/>
+          <clipPath id="tankClip"><rect x="3.5" y="3.5" width="35" height="105" rx="4"/></clipPath>
+          <g clip-path="url(#tankClip)">
+            <rect id="waterRect" x="3.5" y="108" width="35" height="0" fill="url(#waterGrad)"/>
+            <g id="waveGroup">
+              <path id="waveTop" class="wave" d="" fill="rgba(255,255,255,.18)"/>
+              <path id="waveTop2" class="wave2" d="" fill="rgba(255,255,255,.10)"/>
+            </g>
+            <circle class="bubble" cx="12" cy="90" r="1.3" fill="#fff" style="animation-delay:.2s"/>
+            <circle class="bubble" cx="22" cy="95" r="1" fill="#fff" style="animation-delay:1.6s"/>
+            <circle class="bubble" cx="29" cy="88" r="1.5" fill="#fff" style="animation-delay:3s"/>
+          </g>
+        </svg>
+      </div>
+      <div class="inputbox">
+        <label for="inches">Inches — water to ceiling</label>
+        <div class="inputrow">
+          <input type="number" id="inches" inputmode="decimal" placeholder="0" min="0" step="0.1" enterkeyhint="done">
+          <span class="unit">in</span>
+        </div>
+      </div>
+    </div>
+    <button class="btn-primary" id="saveBtn" style="width:100%; margin-top:14px;">Save Reading to History</button>
+  </div>
+
+  <div class="status" id="statusBox">
+    <div class="dot"></div>
+    <div class="txt" id="statusTxt"><b>Waiting for a reading</b>Status will appear here once you type a measurement</div>
+  </div>
+
+  <!-- ORDER RESULT -->
+  <div class="card result">
+    <div class="lbl">Gallons to Order</div>
+    <div class="gal" id="gallons">0<small>gal</small></div>
+  </div>
+
+  <div class="grid2">
+    <div class="metric"><div class="lbl">Water Height</div><div class="val" id="waterHeight">—</div></div>
+    <div class="metric"><div class="lbl">Remaining</div><div class="val" id="pctRemaining">—</div></div>
+  </div>
+
+  <!-- COST -->
+  <div class="card">
+    <div class="costhead">
+      <span class="lbl">Estimated Cost</span>
+      <span class="lbl" style="color:#4C6470;">CI$ trucked rate</span>
+    </div>
+    <div class="costamt" id="costAmt">$0.00<small>CI</small></div>
+    <div class="costnote" id="costNote">Enter a measurement to estimate delivery cost.</div>
+
+    <div class="ratefields">
+      <div class="ratefield">
+        <label>Base rate / m³</label>
+        <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="rateBase" value="7.78" step="0.01"></div>
+      </div>
+      <div class="ratefield">
+        <label>Statutory / m³</label>
+        <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="rateStat" value="0.23" step="0.01"></div>
+      </div>
+      <div class="ratefield">
+        <label>EAF / m³ (check bill)</label>
+        <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="rateEaf" value="0" step="0.01"></div>
+      </div>
+      <div class="ratefield">
+        <label>Min order (gal)</label>
+        <div class="rowin"><input type="number" id="minOrder" value="300" step="10"></div>
+      </div>
+    </div>
+
+    <div class="togglerow">
+      <span class="tl">Emergency / after-hours delivery (+$25.00)</span>
+      <label class="switch"><input type="checkbox" id="emergencyToggle"><span class="slider"></span></label>
+    </div>
+  </div>
+
+  <!-- USAGE -->
+  <div class="card">
+    <div class="sectitle"><h2>Average Usage</h2><span id="histCount">0 readings</span></div>
+    <div class="grid3" style="margin-top:10px;">
+      <div class="metric"><div class="lbl">Per Day</div><div class="val" id="avgDay">—</div></div>
+      <div class="metric"><div class="lbl">Per Week</div><div class="val" id="avgWeek">—</div></div>
+      <div class="metric"><div class="lbl">Per Month</div><div class="val" id="avgMonth">—</div></div>
+    </div>
+    <div class="grid3" style="margin-top:10px;">
+      <div class="metric"><div class="lbl">Cost / Day</div><div class="val" id="avgDayCost" style="color:var(--safe);">—</div></div>
+      <div class="metric"><div class="lbl">Cost / Week</div><div class="val" id="avgWeekCost" style="color:var(--safe);">—</div></div>
+      <div class="metric"><div class="lbl">Cost / Month</div><div class="val" id="avgMonthCost" style="color:var(--safe);">—</div></div>
+    </div>
+
+    <div class="chartwrap" id="chartWrap">
+      <div class="empty">Log a few readings to see your trend.</div>
+    </div>
+    <div class="legend" id="chartLegend" style="display:none;">
+      <span><span class="dot" style="background:var(--water-glow);"></span>Water height (in)</span>
+      <span><span class="dot" style="background:var(--warn);"></span><span id="legendWarn">40" warning</span></span>
+      <span><span class="dot" style="background:var(--crit);"></span><span id="legendCrit">44" shutoff</span></span>
+    </div>
+  </div>
+
+  <!-- HISTORY LIST -->
+  <div class="card">
+    <div class="sectitle"><h2>Reading History</h2></div>
+    <div class="histlist" id="histList" style="margin-top:8px;">
+      <div class="empty">No readings saved yet.</div>
+    </div>
+  </div>
+
+  <!-- BACKUP -->
+  <div class="card">
+    <div class="sectitle"><h2>Backup &amp; Restore</h2><span>survives a new phone</span></div>
+    <p class="costnote" style="margin-top:6px;">Export saves all your readings to one file. Import brings them back — use this when you switch phones so you never lose your history.</p>
+    <div class="btnrow" style="margin-top:10px;">
+      <button class="btn-ghost small" id="exportBtn">Export Backup</button>
+      <button class="btn-ghost small" id="importBtn">Import Backup</button>
+      <input type="file" id="importFile" accept="application/json">
+    </div>
+    <div class="btnrow" style="margin-top:10px;">
+      <button class="btn-danger" id="clearBtn" style="flex:1;">Clear All History</button>
+    </div>
+  </div>
+
+  <div class="foot">
+    <div class="row"><span>Tank</span><span id="footTank">103 × 103 × 57 in</span></div>
+    <div class="row"><span>Formula</span><span>L × W × in ÷ 231</span></div>
+    <div class="row"><span>Warning zone</span><span id="footWarnZone">40–44 in</span></div>
+    <div class="row"><span>Pump shutoff</span><span id="footCrit">≥ 44 in</span></div>
+    <div class="row"><span>Rate source</span><span>WAC, Jul 2026</span></div>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  const CU_IN_PER_GAL = 231;
+  const GAL_TO_M3 = 0.00378541;
+  const STORAGE_KEY = 'tankReplenishmentHistory_v1';
+  const THEME_KEY = 'tankReplenishmentTheme_v1';
+  const SETTINGS_KEY = 'tankReplenishmentSettings_v1';
+  const VERSION_KEY = 'tankReplenishmentLastSeenVersion_v1';
+
+  // Bump this string with every meaningful update you push to GitHub Pages —
+  // that's what triggers the "updated" banner for returning users. Keep it
+  // in sync with CACHE_VERSION in sw.js so the offline cache refreshes too.
+  const APP_VERSION = '1.0.0';
+
+  // ---- tank settings (editable, persisted, shareable defaults) ----
+  const DEFAULT_SETTINGS = { len:103, wid:103, height:57, warnLow:40, crit:44 };
+  function loadSettings(){
+    try{
+      const raw = localStorage.getItem(SETTINGS_KEY);
+      if(!raw) return {...DEFAULT_SETTINGS};
+      const parsed = JSON.parse(raw);
+      return { ...DEFAULT_SETTINGS, ...parsed };
+    }catch(e){ return {...DEFAULT_SETTINGS}; }
+  }
+  function saveSettings(s){
+    try{ localStorage.setItem(SETTINGS_KEY, JSON.stringify(s)); }catch(e){}
+  }
+  let settings = loadSettings();
+  let LEN = settings.len, WID = settings.wid, HEIGHT = settings.height;
+  let WARN_LOW = settings.warnLow, CRIT = settings.crit;
+
+  // ---- theme ----
+  function applyTheme(mode){
+    document.documentElement.setAttribute('data-theme', mode === 'light' ? 'light' : 'dark');
+    const icon = el('themeIcon'), label = el('themeLabel');
+    if(mode === 'light'){ icon.textContent = '☀'; label.textContent = 'Light'; }
+    else { icon.textContent = '🌙'; label.textContent = 'Dark'; }
+  }
+  function loadTheme(){
+    try{ return localStorage.getItem(THEME_KEY) || 'dark'; }catch(e){ return 'dark'; }
+  }
+  function saveTheme(mode){
+    try{ localStorage.setItem(THEME_KEY, mode); }catch(e){}
+  }
+  let currentTheme = loadTheme();
+
+  // ---- in-memory fallback if localStorage is unavailable (e.g. sandboxed preview) ----
+  let memStore = null;
+  function storageAvailable(){
+    try{ const t='__t__'; localStorage.setItem(t,'1'); localStorage.removeItem(t); return true; }
+    catch(e){ return false; }
+  }
+  const HAS_LS = storageAvailable();
+
+  function loadHistory(){
+    if(HAS_LS){
+      try{ return JSON.parse(localStorage.getItem(STORAGE_KEY) || '[]'); }catch(e){ return []; }
+    }
+    return memStore || (memStore = []);
+  }
+  function saveHistory(arr){
+    if(HAS_LS){
+      try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }catch(e){}
+    } else {
+      memStore = arr;
+    }
+  }
+
+  const el = id => document.getElementById(id);
+
+  applyTheme(currentTheme);
+  el('themeToggle').addEventListener('click', ()=>{
+    currentTheme = currentTheme === 'light' ? 'dark' : 'light';
+    applyTheme(currentTheme);
+    saveTheme(currentTheme);
+  });
+
+  el('helpBtn').addEventListener('click', ()=>{
+    el('helpBox').classList.toggle('show');
+    el('helpBtn').classList.toggle('active');
+  });
+
+  // ---- dynamic labels driven by current tank settings ----
+  function updateTankLabels(){
+    const tankStr = `${LEN} × ${WID} × ${HEIGHT} in`;
+    el('tankSubLabel').textContent = 'Tank replenishment · ' + tankStr;
+    el('footTank').textContent = tankStr;
+    el('footWarnZone').textContent = `${WARN_LOW}–${CRIT} in`;
+    el('footCrit').textContent = `≥ ${CRIT} in`;
+    el('legendWarn').textContent = `${WARN_LOW}" warning`;
+    el('legendCrit').textContent = `${CRIT}" shutoff`;
+  }
+  updateTankLabels();
+
+  // ---- settings modal ----
+  function capacityGallons(l,w,h){ return (l*w*h)/CU_IN_PER_GAL; }
+  function pctRemainAt(gapIn, h){ return Math.max(0, Math.min(100, ((h-gapIn)/h)*100)); }
+
+  function refreshSettingsPreview(){
+    const l = parseFloat(el('setLen').value) || 0;
+    const w = parseFloat(el('setWid').value) || 0;
+    const h = parseFloat(el('setHeight').value) || 0;
+    const warn = parseFloat(el('setWarn').value) || 0;
+    const crit = parseFloat(el('setCrit').value) || 0;
+
+    el('setCapacityPreview').textContent = (l&&w&&h) ? fmt(capacityGallons(l,w,h)) + ' gal' : '—';
+
+    if(l&&w&&h){
+      const warnPct = pctRemainAt(warn, h);
+      const critPct = pctRemainAt(crit, h);
+      el('thresholdPreview').innerHTML =
+        `At <b>${warn}"</b> from ceiling → <b>${fmt(warnPct,0)}%</b> water remains.<br>` +
+        `At <b>${crit}"</b> from ceiling → <b>${fmt(critPct,0)}%</b> water remains — pump shuts off.`;
+    } else {
+      el('thresholdPreview').textContent = 'Enter tank dimensions to preview remaining %.';
+    }
+  }
+
+  function openSettings(){
+    el('setLen').value = LEN;
+    el('setWid').value = WID;
+    el('setHeight').value = HEIGHT;
+    el('setWarn').value = WARN_LOW;
+    el('setCrit').value = CRIT;
+    refreshSettingsPreview();
+    el('settingsOverlay').classList.add('show');
+  }
+  function closeSettings(){ el('settingsOverlay').classList.remove('show'); }
+
+  el('settingsToggle').addEventListener('click', openSettings);
+  el('settingsCloseBtn').addEventListener('click', closeSettings);
+  el('settingsOverlay').addEventListener('click', (e)=>{
+    if(e.target === el('settingsOverlay')) closeSettings();
+  });
+  ['setLen','setWid','setHeight','setWarn','setCrit'].forEach(id=>{
+    el(id).addEventListener('input', refreshSettingsPreview);
+  });
+
+  el('settingsResetBtn').addEventListener('click', ()=>{
+    el('setLen').value = DEFAULT_SETTINGS.len;
+    el('setWid').value = DEFAULT_SETTINGS.wid;
+    el('setHeight').value = DEFAULT_SETTINGS.height;
+    el('setWarn').value = DEFAULT_SETTINGS.warnLow;
+    el('setCrit').value = DEFAULT_SETTINGS.crit;
+    refreshSettingsPreview();
+  });
+
+  el('settingsSaveBtn').addEventListener('click', ()=>{
+    const l = parseFloat(el('setLen').value);
+    const w = parseFloat(el('setWid').value);
+    const h = parseFloat(el('setHeight').value);
+    const warn = parseFloat(el('setWarn').value);
+    const crit = parseFloat(el('setCrit').value);
+
+    if(![l,w,h,warn,crit].every(n => !isNaN(n) && n >= 0) || !l || !w || !h){
+      alert('Please fill in valid, positive numbers for every field.');
+      return;
+    }
+    if(warn > crit){
+      alert('The warning threshold should be less than or equal to the shutoff threshold.');
+      return;
+    }
+    if(crit > h){
+      alert("The shutoff measurement can't be taller than the tank itself.");
+      return;
+    }
+
+    settings = { len:l, wid:w, height:h, warnLow:warn, crit:crit };
+    saveSettings(settings);
+    LEN = l; WID = w; HEIGHT = h; WARN_LOW = warn; CRIT = crit;
+
+    updateTankLabels();
+    updateCalc();
+    renderAll();
+    closeSettings();
+  });
+
+  const inchesInput = el('inches');
+  const gallonsEl = el('gallons');
+  const waterHeightEl = el('waterHeight');
+  const pctRemainingEl = el('pctRemaining');
+  const statusBox = el('statusBox');
+  const statusTxt = el('statusTxt');
+  const waterRect = el('waterRect');
+  const waveTop = el('waveTop');
+  const waveTop2 = el('waveTop2');
+  const tankPxTop = 3.5, tankPxHeight = 105, tankPxW = 35, tankPxX = 3.5;
+
+  const costAmt = el('costAmt');
+  const costNote = el('costNote');
+  const rateBase = el('rateBase');
+  const rateStat = el('rateStat');
+  const rateEaf = el('rateEaf');
+  const minOrderEl = el('minOrder');
+  const emergencyToggle = el('emergencyToggle');
+
+  function fmt(n, d=0){ return Number(n).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d}); }
+  function fmtMoney(n){ return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+  function wavePath(offset){
+    // simple repeating sine-ish wave across width, doubled for seamless loop
+    let d = `M ${-52+offset} 6 `;
+    for(let x=-52+offset; x<=84+offset; x+=13){
+      d += `q 6.5 -6 13 0 `;
+    }
+    d += `V 20 H ${-52+offset} Z`;
+    return d;
+  }
+  waveTop.setAttribute('d', wavePath(0));
+  waveTop2.setAttribute('d', wavePath(6));
+
+  function currentInches(){
+    const raw = inchesInput.value;
+    if(raw === '' || raw === null) return null;
+    return Math.max(0, parseFloat(raw) || 0);
+  }
+
+  function updateCalc(){
+    const gap = currentInches();
+
+    if(gap === null){
+      gallonsEl.innerHTML = '0<small>gal</small>';
+      waterHeightEl.textContent = '—';
+      pctRemainingEl.textContent = '—';
+      statusBox.className = 'status';
+      statusTxt.innerHTML = '<b>Waiting for a reading</b>Status will appear here once you type a measurement';
+      waterRect.setAttribute('height', 0);
+      waterRect.setAttribute('y', tankPxTop + tankPxHeight);
+      costAmt.innerHTML = '$0.00<small>CI</small>';
+      costNote.textContent = 'Enter a measurement to estimate delivery cost.';
+      return;
+    }
+
+    const gallons = (LEN * WID * gap) / CU_IN_PER_GAL;
+    const waterHt = Math.max(0, HEIGHT - gap);
+    const pct = Math.max(0, Math.min(100, (waterHt / HEIGHT) * 100));
+
+    gallonsEl.innerHTML = fmt(gallons) + '<small>gal</small>';
+    waterHeightEl.textContent = fmt(waterHt, 1) + ' in';
+    pctRemainingEl.textContent = fmt(pct, 1) + '%';
+
+    const fillFrac = Math.max(0, Math.min(1, waterHt / HEIGHT));
+    const fillPx = tankPxHeight * fillFrac;
+    waterRect.setAttribute('height', fillPx);
+    waterRect.setAttribute('y', tankPxTop + (tankPxHeight - fillPx));
+
+    if(gap >= CRIT){
+      statusBox.className = 'status crit';
+      statusTxt.innerHTML = `<b>Pump shutoff level</b>${CRIT}"+ reached — order immediately`;
+    } else if(gap >= WARN_LOW){
+      statusBox.className = 'status warn';
+      statusTxt.innerHTML = `<b>Order now</b>In the ${WARN_LOW}–${CRIT}" warning zone`;
+    } else {
+      statusBox.className = 'status safe';
+      statusTxt.innerHTML = `<b>Water level healthy</b>Below the ${WARN_LOW}" warning line`;
+    }
+
+    // ---- cost ----
+    const base = parseFloat(rateBase.value) || 0;
+    const stat = parseFloat(rateStat.value) || 0;
+    const eaf = parseFloat(rateEaf.value) || 0;
+    const minOrder = parseFloat(minOrderEl.value) || 0;
+    const perM3 = base + stat + eaf;
+
+    let orderGal = gallons;
+    let minApplied = false;
+    if(orderGal > 0 && orderGal < minOrder){ orderGal = minOrder; minApplied = true; }
+
+    const m3 = orderGal * GAL_TO_M3;
+    let cost = m3 * perM3;
+    let emergencyApplied = false;
+    if(emergencyToggle.checked && orderGal > 0){ cost += 25; emergencyApplied = true; }
+
+    costAmt.innerHTML = fmtMoney(cost) + '<small>CI</small>';
+    let note = `Based on ${fmt(orderGal)} gal at $${perM3.toFixed(2)}/m³ (base + statutory${eaf>0?' + EAF':''}).`;
+    if(minApplied) note += ` <b>300-gal minimum order applied.</b>`;
+    if(emergencyApplied) note += ` <b>+$25.00 emergency surcharge.</b>`;
+    costNote.innerHTML = note;
+  }
+
+  [inchesInput, rateBase, rateStat, rateEaf, minOrderEl, emergencyToggle].forEach(i=>{
+    i.addEventListener('input', updateCalc);
+    i.addEventListener('change', updateCalc);
+  });
+  [rateBase, rateStat, rateEaf].forEach(i=>{
+    i.addEventListener('input', ()=>{ if(typeof renderUsage === 'function') renderUsage(); });
+    i.addEventListener('change', ()=>{ if(typeof renderUsage === 'function') renderUsage(); });
+  });
+  updateCalc();
+
+  // ================= HISTORY =================
+  let history = loadHistory(); // [{t, gap, gallons, waterHt}]
+  let editingT = null;
+
+  function toDatetimeLocalValue(t){
+    const d = new Date(t);
+    const pad = n => String(n).padStart(2,'0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+  }
+
+  function renderHistoryList(){
+    const list = el('histList');
+    el('histCount').textContent = history.length + (history.length===1?' reading':' readings');
+    if(history.length === 0){
+      list.innerHTML = '<div class="empty">No readings saved yet.</div>';
+      return;
+    }
+    const sorted = [...history].sort((a,b)=>b.t-a.t);
+    list.innerHTML = sorted.map(entry=>{
+      const d = new Date(entry.t);
+      const dateStr = d.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' · ' + d.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+
+      if(editingT === entry.t){
+        return `<div class="histrow editing" data-t="${entry.t}">
+          <div class="editform">
+            <div class="editrow">
+              <div class="editfield">
+                <label>Inches — gap</label>
+                <input type="number" step="0.1" min="0" class="editGap" value="${entry.gap}">
+              </div>
+              <div class="editfield">
+                <label>Date &amp; time</label>
+                <input type="datetime-local" class="editWhen" value="${toDatetimeLocalValue(entry.t)}">
+              </div>
+            </div>
+            <div class="editbtns">
+              <button class="btn-save" data-save="${entry.t}">Save Changes</button>
+              <button class="btn-cancel" data-cancel="${entry.t}">Cancel</button>
+            </div>
+          </div>
+        </div>`;
+      }
+
+      return `<div class="histrow" data-t="${entry.t}">
+        <div class="l"><span class="date">${dateStr}</span><span class="meas">${entry.gap.toFixed(1)}" gap · ${fmt(entry.gallons)} gal to order</span></div>
+        <div class="actions">
+          <button class="icon edit" data-edit="${entry.t}" title="Edit">✎</button>
+          <button class="icon del" data-del="${entry.t}" title="Delete">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-del]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const t = parseFloat(btn.getAttribute('data-del'));
+        if(!confirm('Delete this reading?')) return;
+        history = history.filter(e=>e.t !== t);
+        if(editingT === t) editingT = null;
+        saveHistory(history);
+        renderAll();
+      });
+    });
+
+    list.querySelectorAll('[data-edit]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        editingT = parseFloat(btn.getAttribute('data-edit'));
+        renderHistoryList();
+      });
+    });
+
+    list.querySelectorAll('[data-cancel]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        editingT = null;
+        renderHistoryList();
+      });
+    });
+
+    list.querySelectorAll('[data-save]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const origT = parseFloat(btn.getAttribute('data-save'));
+        const row = btn.closest('.histrow');
+        const newGapRaw = row.querySelector('.editGap').value;
+        const newWhenRaw = row.querySelector('.editWhen').value;
+        const newGap = Math.max(0, parseFloat(newGapRaw) || 0);
+        const newT = newWhenRaw ? new Date(newWhenRaw).getTime() : origT;
+
+        if(isNaN(newT)){ alert('That date/time looks invalid.'); return; }
+
+        const idx = history.findIndex(e=>e.t === origT);
+        if(idx === -1) return;
+
+        // if timestamp changes, make sure it doesn't collide with another existing entry
+        if(newT !== origT && history.some(e=>e.t === newT)){
+          alert('Another reading already exists at that exact time — nudge the minute and try again.');
+          return;
+        }
+
+        history[idx] = {
+          t: newT,
+          gap: newGap,
+          gallons: (LEN*WID*newGap)/CU_IN_PER_GAL,
+          waterHt: Math.max(0, HEIGHT-newGap)
+        };
+        editingT = null;
+        saveHistory(history);
+        renderAll();
+      });
+    });
+  }
+
+  function computeUsageSegments(){
+    const sorted = [...history].sort((a,b)=>a.t-b.t);
+    const segments = [];
+    for(let i=1;i<sorted.length;i++){
+      const prev = sorted[i-1], curr = sorted[i];
+      if(curr.gap > prev.gap){
+        const gallonsUsed = (LEN*WID*(curr.gap - prev.gap))/CU_IN_PER_GAL;
+        const days = Math.max((curr.t - prev.t)/86400000, 1/24);
+        segments.push({ start: prev.t, end: curr.t, gallonsUsed, days });
+      }
+      // if curr.gap <= prev.gap, a delivery happened — resets baseline, not counted as usage
+    }
+    return segments;
+  }
+
+  function renderUsage(){
+    const segs = computeUsageSegments();
+    const now = Date.now();
+
+    function avgFor(windowDays){
+      const cutoff = windowDays ? now - windowDays*86400000 : -Infinity;
+      const relevant = segs.filter(s => s.end >= cutoff);
+      const totalGal = relevant.reduce((a,s)=>a+s.gallonsUsed,0);
+      const totalDays = relevant.reduce((a,s)=>a+s.days,0);
+      if(totalDays <= 0) return null;
+      return totalGal/totalDays;
+    }
+
+    const dayAvg = avgFor(7);   // recent daily rate, based on last 7 days of segments
+    const weekAvg = avgFor(30) ? avgFor(30)*7 : null; // approximate weekly using 30-day rate
+    const monthAvg = avgFor(null) ? avgFor(null)*30 : null; // overall rate * 30
+
+    el('avgDay').textContent = dayAvg!==null ? fmt(dayAvg)+' gal' : '—';
+    el('avgWeek').textContent = weekAvg!==null ? fmt(weekAvg)+' gal' : '—';
+    el('avgMonth').textContent = monthAvg!==null ? fmt(monthAvg)+' gal' : '—';
+
+    // ---- average cost, using the same per-m3 rate as the order estimate ----
+    const base = parseFloat(rateBase.value) || 0;
+    const stat = parseFloat(rateStat.value) || 0;
+    const eaf = parseFloat(rateEaf.value) || 0;
+    const perGallon = (base + stat + eaf) * GAL_TO_M3;
+
+    el('avgDayCost').textContent = dayAvg!==null ? fmtMoney(dayAvg*perGallon) : '—';
+    el('avgWeekCost').textContent = weekAvg!==null ? fmtMoney(weekAvg*perGallon) : '—';
+    el('avgMonthCost').textContent = monthAvg!==null ? fmtMoney(monthAvg*perGallon) : '—';
+
+    renderChart();
+  }
+
+  function renderChart(){
+    const wrap = el('chartWrap');
+    const legend = el('chartLegend');
+    const sorted = [...history].sort((a,b)=>a.t-b.t);
+    if(sorted.length < 2){
+      wrap.innerHTML = '<div class="empty">Log a few readings to see your trend.</div>';
+      legend.style.display = 'none';
+      return;
+    }
+    legend.style.display = 'flex';
+
+    const W = 460, H = 160, padL = 34, padR = 10, padT = 14, padB = 22;
+    const plotW = W - padL - padR, plotH = H - padT - padB;
+
+    const heights = sorted.map(e => HEIGHT - e.gap);
+    const minH = 0, maxH = HEIGHT;
+    const tMin = sorted[0].t, tMax = sorted[sorted.length-1].t;
+    const tSpan = Math.max(tMax - tMin, 1);
+
+    function x(t){ return padL + ((t - tMin)/tSpan) * plotW; }
+    function y(h){ return padT + (1 - (h - minH)/(maxH - minH)) * plotH; }
+
+    const linePts = sorted.map(e => `${x(e.t).toFixed(1)},${y(HEIGHT-e.gap).toFixed(1)}`).join(' ');
+    const areaPts = `${padL},${y(0).toFixed(1)} ` + linePts + ` ${x(tMax).toFixed(1)},${y(0).toFixed(1)}`;
+
+    const y40 = y(HEIGHT-WARN_LOW), y44 = y(HEIGHT-CRIT);
+
+    const dots = sorted.map(e => `<circle cx="${x(e.t).toFixed(1)}" cy="${y(HEIGHT-e.gap).toFixed(1)}" r="2.6" fill="var(--water-glow)" stroke="#04212B" stroke-width="1"/>`).join('');
+
+    const firstLabel = new Date(tMin).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    const lastLabel = new Date(tMax).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+
+    wrap.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="var(--water-glow)" stop-opacity="0.35"/>
+            <stop offset="100%" stop-color="var(--water-glow)" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        <line x1="${padL}" y1="${y44.toFixed(1)}" x2="${W-padR}" y2="${y44.toFixed(1)}" stroke="var(--crit)" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>
+        <line x1="${padL}" y1="${y40.toFixed(1)}" x2="${W-padR}" y2="${y40.toFixed(1)}" stroke="var(--warn)" stroke-width="1" stroke-dasharray="3,3" opacity="0.6"/>
+        <polygon points="${areaPts}" fill="url(#areaGrad)"/>
+        <polyline points="${linePts}" fill="none" stroke="var(--water-glow)" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+        ${dots}
+        <text x="${padL}" y="${H-6}" font-family="var(--mono)" font-size="9" fill="#5B7280">${firstLabel}</text>
+        <text x="${W-padR}" y="${H-6}" font-family="var(--mono)" font-size="9" fill="#5B7280" text-anchor="end">${lastLabel}</text>
+      </svg>`;
+  }
+
+  function renderAll(){
+    renderHistoryList();
+    renderUsage();
+  }
+
+  function saveReading(){
+    const gap = currentInches();
+    if(gap === null){ inchesInput.focus(); return; }
+    const gallons = (LEN * WID * gap) / CU_IN_PER_GAL;
+    const waterHt = Math.max(0, HEIGHT - gap);
+    history.push({ t: Date.now(), gap, gallons, waterHt });
+    saveHistory(history);
+    renderAll();
+
+    const btn = el('saveBtn');
+    const orig = btn.textContent;
+    btn.textContent = 'Saved ✓';
+    setTimeout(()=>{ btn.textContent = orig; }, 1200);
+  }
+
+  el('saveBtn').addEventListener('click', saveReading);
+
+  inchesInput.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter'){
+      e.preventDefault();
+      inchesInput.blur(); // dismiss the keyboard
+      saveReading();
+    }
+  });
+
+  el('clearBtn').addEventListener('click', ()=>{
+    if(history.length === 0) return;
+    if(confirm('Clear all saved readings? This cannot be undone (unless you have an exported backup).')){
+      history = [];
+      saveHistory(history);
+      renderAll();
+    }
+  });
+
+  el('exportBtn').addEventListener('click', ()=>{
+    const payload = { app: 'tank-replenishment', version: 1, exportedAt: new Date().toISOString(), history };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    const stamp = new Date().toISOString().slice(0,10);
+    a.href = url;
+    a.download = `tank-water-backup-${stamp}.json`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  });
+
+  el('importBtn').addEventListener('click', ()=> el('importFile').click());
+  el('importFile').addEventListener('change', (e)=>{
+    const file = e.target.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt)=>{
+      try{
+        const data = JSON.parse(evt.target.result);
+        const incoming = Array.isArray(data.history) ? data.history : (Array.isArray(data) ? data : null);
+        if(!incoming) throw new Error('bad format');
+        const merged = [...history];
+        const existingTs = new Set(history.map(h=>h.t));
+        incoming.forEach(item=>{
+          if(item && typeof item.t === 'number' && typeof item.gap === 'number' && !existingTs.has(item.t)){
+            merged.push({ t:item.t, gap:item.gap, gallons: item.gallons ?? (LEN*WID*item.gap/CU_IN_PER_GAL), waterHt: item.waterHt ?? Math.max(0,HEIGHT-item.gap) });
+          }
+        });
+        history = merged;
+        saveHistory(history);
+        renderAll();
+        alert('Backup imported — ' + incoming.length + ' reading(s) merged in.');
+      }catch(err){
+        alert('Could not read that file. Make sure it is a backup exported from this app.');
+      }
+      e.target.value = '';
+    };
+    reader.readAsText(file);
+  });
+
+  renderAll();
+
+  // ---- splash screen: hide once the fill animation has had time to play ----
+  const splash = document.getElementById('splashOverlay');
+  if(splash){
+    setTimeout(()=>{ splash.classList.add('hide'); }, 1500);
+    setTimeout(()=>{ splash.style.display = 'none'; }, 2000);
+  }
+
+  // ---- service worker: network-first, so updates pushed to GitHub Pages ----
+  // ---- are picked up automatically next time the app opens online ----
+  if('serviceWorker' in navigator){
+    window.addEventListener('load', ()=>{
+      navigator.serviceWorker.register('./sw.js').catch(()=>{});
+    });
+  }
+
+  // ---- "updated" banner: compares the version baked into this file against ----
+  // ---- the version last seen on this device, stored locally ----
+  function checkForUpdateBanner(){
+    let lastSeen = null;
+    try{ lastSeen = localStorage.getItem(VERSION_KEY); }catch(e){}
+
+    if(lastSeen && lastSeen !== APP_VERSION){
+      const banner = document.createElement('div');
+      banner.className = 'updateBanner';
+      banner.innerHTML = `<span>Water Tracker updated to the latest version ✓</span><button aria-label="Dismiss">✕</button>`;
+      document.body.appendChild(banner);
+      banner.querySelector('button').addEventListener('click', ()=> banner.remove());
+      setTimeout(()=>{ if(banner.isConnected) banner.remove(); }, 6000);
+    }
+    try{ localStorage.setItem(VERSION_KEY, APP_VERSION); }catch(e){}
+  }
+  // wait until just after the splash clears so the banner doesn't fight it
+  setTimeout(checkForUpdateBanner, 1600);
+})();
+</script>
+</body>
+</html>
