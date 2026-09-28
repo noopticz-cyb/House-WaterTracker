@@ -5,7 +5,7 @@
 // to GitHub Pages show up the next time the app opens with a connection —
 // no reinstall needed — while the app still works with zero signal.
 
-const CACHE_VERSION = 'water-tracker-v2'; // bump this string whenever you push a real update
+const CACHE_VERSION = 'water-tracker-v3'; // bump this string whenever you push a real update
 const CACHE_NAME = `wt-cache-${CACHE_VERSION}`;
 const CORE_ASSETS = [
   './',

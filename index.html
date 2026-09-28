@@ -516,7 +516,7 @@
         <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="rateStat" value="0.23" step="0.01"></div>
       </div>
       <div class="ratefield">
-        <label>EAF / m³ (check bill)</label>
+        <label>Energy adj. (EAF) / m³</label>
         <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="rateEaf" value="0" step="0.01"></div>
       </div>
       <div class="ratefield">
@@ -529,6 +529,9 @@
       <span class="tl">Emergency / after-hours delivery (+$25.00)</span>
       <label class="switch"><input type="checkbox" id="emergencyToggle"><span class="slider"></span></label>
     </div>
+
+    <button class="btn-ghost small" id="calibBtn" style="width:100%; margin-top:12px;">Match My Real Price (from last delivery)</button>
+    <div class="costnote" id="calibNote">The energy charge changes monthly. Tap above after logging a delivery with its real cost, and the EAF is worked out for you. Rates are saved on this phone.</div>
   </div>
 
   <!-- LOG DELIVERY -->
@@ -541,13 +544,17 @@
         <div class="rowin"><input type="number" id="delGallons" inputmode="numeric" step="10" min="0" placeholder="0"></div>
       </div>
       <div class="ratefield">
-        <label>Amount paid (CI$)</label>
+        <label id="delCostLbl">Amount paid (CI$)</label>
         <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="delCost" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
       </div>
     </div>
     <div class="ratefield full">
       <label>Delivered on</label>
       <div class="rowin"><input type="datetime-local" id="delWhen"></div>
+    </div>
+    <div class="togglerow">
+      <span class="tl">Paying on the monthly bill — save cost as an estimate, fix it when the bill comes</span>
+      <label class="switch"><input type="checkbox" id="delPending"><span class="slider"></span></label>
     </div>
     <div class="thresholdPreview" id="delPreview">Enter the gallons delivered to preview the refill.</div>
     <button class="btn-primary" id="delSaveBtn" style="width:100%; margin-top:12px;">💧 Log Delivery &amp; Refill Tank</button>
@@ -633,11 +640,12 @@
   const SETTINGS_KEY = 'tankReplenishmentSettings_v1';
   const VERSION_KEY = 'tankReplenishmentLastSeenVersion_v1';
   const DELIVERY_KEY = 'tankReplenishmentDeliveries_v1';
+  const RATES_KEY = 'tankReplenishmentRates_v1';
 
   // Bump this string with every meaningful update you push to GitHub Pages —
   // that's what triggers the "updated" banner for returning users. Keep it
   // in sync with CACHE_VERSION in sw.js so the offline cache refreshes too.
-  const APP_VERSION = '1.1.0';
+  const APP_VERSION = '1.2.0';
 
   // ---- tank settings (editable, persisted, shareable defaults) ----
   const DEFAULT_SETTINGS = { len:103, wid:103, height:57, warnLow:40, crit:44 };
@@ -835,6 +843,33 @@
   const rateEaf = el('rateEaf');
   const minOrderEl = el('minOrder');
   const emergencyToggle = el('emergencyToggle');
+
+  // ---- rate fields + billing prefs persist between launches ----
+  function loadRates(){
+    try{ return JSON.parse(localStorage.getItem(RATES_KEY) || 'null'); }catch(e){ return null; }
+  }
+  function saveRates(){
+    const r = {
+      base: rateBase.value, stat: rateStat.value, eaf: rateEaf.value, minOrder: minOrderEl.value,
+      payMonthly: el('delPending').checked,
+      calibNote: el('calibNote').dataset.saved || ''
+    };
+    try{ localStorage.setItem(RATES_KEY, JSON.stringify(r)); }catch(e){}
+  }
+  (function restoreRates(){
+    const r = loadRates();
+    if(!r) return;
+    if(r.base !== undefined && r.base !== '') rateBase.value = r.base;
+    if(r.stat !== undefined && r.stat !== '') rateStat.value = r.stat;
+    if(r.eaf !== undefined && r.eaf !== '') rateEaf.value = r.eaf;
+    if(r.minOrder !== undefined && r.minOrder !== '') minOrderEl.value = r.minOrder;
+    el('delPending').checked = !!r.payMonthly;
+    if(r.calibNote){ el('calibNote').innerHTML = r.calibNote; el('calibNote').dataset.saved = r.calibNote; }
+  })();
+  [rateBase, rateStat, rateEaf, minOrderEl].forEach(i=>{
+    i.addEventListener('change', saveRates);
+    i.addEventListener('input', saveRates);
+  });
 
   function fmt(n, d=0){ return Number(n).toLocaleString('en-US', {minimumFractionDigits:d, maximumFractionDigits:d}); }
   function fmtMoney(n){ return '$' + Number(n).toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2}); }
@@ -1318,7 +1353,7 @@
     t = uniqueTime(t, deliveries);
 
     let cost = parseFloat(delCost.value);
-    let estimated = false;
+    let estimated = delPending.checked;
     if(isNaN(cost) || cost < 0){ cost = estimateCostFor(gal); estimated = true; }
 
     const d = { t, gallons: gal, cost, estimated };
@@ -1341,6 +1376,41 @@
   }
   el('delSaveBtn').addEventListener('click', logDelivery);
 
+  const delPending = el('delPending');
+  function updatePendingLabel(){
+    el('delCostLbl').textContent = delPending.checked ? 'Estimated cost (CI$)' : 'Amount paid (CI$)';
+  }
+  delPending.addEventListener('change', ()=>{ updatePendingLabel(); saveRates(); });
+  updatePendingLabel();
+
+  // works backwards from a real delivery cost to the energy adjustment (EAF)
+  el('calibBtn').addEventListener('click', ()=>{
+    const real = [...deliveries].filter(d => !d.estimated && d.cost > 0 && d.gallons > 0).sort((a,b)=>b.t-a.t)[0];
+    if(!real){
+      alert('No delivery with a real cost yet. Log a delivery (or edit one) with the amount from your bill first.');
+      return;
+    }
+    const base = parseFloat(rateBase.value) || 0;
+    const stat = parseFloat(rateStat.value) || 0;
+    const minOrder = parseFloat(minOrderEl.value) || 0;
+    const billedGal = Math.max(real.gallons, minOrder);
+    const perM3 = real.cost / (billedGal * GAL_TO_M3);
+    const eaf = perM3 - base - stat;
+    const dateStr = new Date(real.t).toLocaleDateString('en-US',{month:'short',day:'numeric'});
+    if(eaf < -0.005){
+      alert(`That delivery works out to $${perM3.toFixed(2)}/m³, which is less than base + statutory ($${(base+stat).toFixed(2)}). Check the base rate or the amount entered for the ${dateStr} delivery.`);
+      return;
+    }
+    rateEaf.value = Math.max(0, eaf).toFixed(2);
+    const note = `EAF set to <b>$${Math.max(0,eaf).toFixed(2)}/m³</b> from your ${dateStr} delivery (${fmt(real.gallons)} gal · ${fmtMoney(real.cost)} = $${perM3.toFixed(2)}/m³ total). Tap again after your next bill to keep it current.`;
+    el('calibNote').innerHTML = note;
+    el('calibNote').dataset.saved = note;
+    saveRates();
+    updateCalc();
+    renderUsage();
+    refreshDeliveryForm();
+  });
+
   function renderDeliveries(){
     const list = el('delList');
     const tot = deliveryTotals();
@@ -1358,7 +1428,9 @@
     const last = sorted[0];
     const daysAgo = Math.floor((Date.now() - last.t)/86400000);
     const agoStr = daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + ' days ago';
-    el('delLastNote').innerHTML = `Last delivery <b>${agoStr}</b> · average <b>${fmtMoney(tot.cost/tot.count)}</b> per delivery.`;
+    const pendingCount = deliveries.filter(d => d.estimated).length;
+    el('delLastNote').innerHTML = `Last delivery <b>${agoStr}</b> · average <b>${fmtMoney(tot.cost/tot.count)}</b> per delivery.` +
+      (pendingCount ? `<br><span style="color:var(--warn);">${pendingCount} ${pendingCount===1?'delivery is':'deliveries are'} still estimated — tap ✎ and enter the amount from your monthly bill.</span>` : '');
 
     list.innerHTML = sorted.map(d=>{
       const dt = new Date(d.t);
@@ -1422,7 +1494,10 @@
         if(newT !== origT) newT = uniqueTime(newT, deliveries.filter(x => x !== d));
         d.t = newT;
         d.gallons = gal;
-        if(!isNaN(cost) && cost >= 0){ d.cost = cost; d.estimated = false; }
+        if(!isNaN(cost) && cost >= 0){
+          if(Math.abs(cost - d.cost) > 0.004) d.estimated = false; // a new amount = the real bill figure
+          d.cost = cost;
+        }
         const linked = history.some(h => h.t === d.readingT);
         if(linked || typeof d.baseGap === 'number') attachRefillReading(d);
         editingDelT = null;
