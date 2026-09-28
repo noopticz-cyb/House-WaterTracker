@@ -337,6 +337,14 @@
     from{ y:24; height:0; }
     to{ y:2; height:22; }
   }
+  /* ---- deliveries ---- */
+  .ratefield input[type=datetime-local]{ color-scheme: inherit; font-size:14px; }
+  .ratefield.full{ margin-top:10px; }
+  .histrow.refill{ border-left:3px solid var(--safe); }
+  .histrow .meas.refillTxt{ color:var(--safe); }
+  .histrow .sub2{ font-size:11px; color:var(--text-dim); font-family:var(--mono); margin-top:1px; }
+  .grid3 .metric .val.sm{ font-size:15px; }
+  .estTag{ font-size:9.5px; font-family:var(--mono); color:var(--warn); border:1px solid rgba(240,169,59,.4); border-radius:6px; padding:0 4px; margin-left:4px; }
 </style>
 </head>
 <body>
@@ -523,6 +531,28 @@
     </div>
   </div>
 
+  <!-- LOG DELIVERY -->
+  <div class="card">
+    <div class="sectitle"><h2>Log a Delivery</h2><span>what you actually got</span></div>
+    <p class="costnote" style="margin-top:6px;">Enter what was actually delivered and what you paid. It adds a <b>Tank refilled</b> entry to your history and estimates your new water level.</p>
+    <div class="ratefields">
+      <div class="ratefield">
+        <label>Gallons delivered</label>
+        <div class="rowin"><input type="number" id="delGallons" inputmode="numeric" step="10" min="0" placeholder="0"></div>
+      </div>
+      <div class="ratefield">
+        <label>Amount paid (CI$)</label>
+        <div class="rowin"><span style="font-family:var(--mono);font-size:13px;color:var(--text-dim);">$</span><input type="number" id="delCost" inputmode="decimal" step="0.01" min="0" placeholder="0.00"></div>
+      </div>
+    </div>
+    <div class="ratefield full">
+      <label>Delivered on</label>
+      <div class="rowin"><input type="datetime-local" id="delWhen"></div>
+    </div>
+    <div class="thresholdPreview" id="delPreview">Enter the gallons delivered to preview the refill.</div>
+    <button class="btn-primary" id="delSaveBtn" style="width:100%; margin-top:12px;">💧 Log Delivery &amp; Refill Tank</button>
+  </div>
+
   <!-- USAGE -->
   <div class="card">
     <div class="sectitle"><h2>Average Usage</h2><span id="histCount">0 readings</span></div>
@@ -536,6 +566,7 @@
       <div class="metric"><div class="lbl">Cost / Week</div><div class="val" id="avgWeekCost" style="color:var(--safe);">—</div></div>
       <div class="metric"><div class="lbl">Cost / Month</div><div class="val" id="avgMonthCost" style="color:var(--safe);">—</div></div>
     </div>
+    <div class="costnote" id="usageCostNote">Costs use the rate fields above.</div>
 
     <div class="chartwrap" id="chartWrap">
       <div class="empty">Log a few readings to see your trend.</div>
@@ -555,10 +586,24 @@
     </div>
   </div>
 
+  <!-- DELIVERY HISTORY -->
+  <div class="card">
+    <div class="sectitle"><h2>Delivery History</h2><span id="delCount">0 deliveries</span></div>
+    <div class="grid3" style="margin-top:10px;">
+      <div class="metric"><div class="lbl">Total Ordered</div><div class="val sm" id="delTotalGal">—</div></div>
+      <div class="metric"><div class="lbl">Total Spent</div><div class="val sm" id="delTotalCost" style="color:var(--safe);">—</div></div>
+      <div class="metric"><div class="lbl">Per 1,000 gal</div><div class="val sm" id="delAvgRate">—</div></div>
+    </div>
+    <div class="costnote" id="delLastNote"></div>
+    <div class="histlist" id="delList" style="margin-top:8px;">
+      <div class="empty">No deliveries logged yet.</div>
+    </div>
+  </div>
+
   <!-- BACKUP -->
   <div class="card">
     <div class="sectitle"><h2>Backup &amp; Restore</h2><span>survives a new phone</span></div>
-    <p class="costnote" style="margin-top:6px;">Export saves all your readings to one file. Import brings them back — use this when you switch phones so you never lose your history.</p>
+    <p class="costnote" style="margin-top:6px;">Export saves all your readings and deliveries to one file. Import brings them back — use this when you switch phones so you never lose your history.</p>
     <div class="btnrow" style="margin-top:10px;">
       <button class="btn-ghost small" id="exportBtn">Export Backup</button>
       <button class="btn-ghost small" id="importBtn">Import Backup</button>
@@ -587,11 +632,12 @@
   const THEME_KEY = 'tankReplenishmentTheme_v1';
   const SETTINGS_KEY = 'tankReplenishmentSettings_v1';
   const VERSION_KEY = 'tankReplenishmentLastSeenVersion_v1';
+  const DELIVERY_KEY = 'tankReplenishmentDeliveries_v1';
 
   // Bump this string with every meaningful update you push to GitHub Pages —
   // that's what triggers the "updated" banner for returning users. Keep it
   // in sync with CACHE_VERSION in sw.js so the offline cache refreshes too.
-  const APP_VERSION = '1.0.0';
+  const APP_VERSION = '1.1.0';
 
   // ---- tank settings (editable, persisted, shareable defaults) ----
   const DEFAULT_SETTINGS = { len:103, wid:103, height:57, warnLow:40, crit:44 };
@@ -644,6 +690,21 @@
       try{ localStorage.setItem(STORAGE_KEY, JSON.stringify(arr)); }catch(e){}
     } else {
       memStore = arr;
+    }
+  }
+
+  let memDeliveries = null;
+  function loadDeliveries(){
+    if(HAS_LS){
+      try{ return JSON.parse(localStorage.getItem(DELIVERY_KEY) || '[]'); }catch(e){ return []; }
+    }
+    return memDeliveries || (memDeliveries = []);
+  }
+  function saveDeliveries(arr){
+    if(HAS_LS){
+      try{ localStorage.setItem(DELIVERY_KEY, JSON.stringify(arr)); }catch(e){}
+    } else {
+      memDeliveries = arr;
     }
   }
 
@@ -872,6 +933,8 @@
   // ================= HISTORY =================
   let history = loadHistory(); // [{t, gap, gallons, waterHt}]
   let editingT = null;
+  let deliveries = loadDeliveries(); // [{t, gallons, cost, estimated, baseGap, readingT}]
+  let editingDelT = null;
 
   function toDatetimeLocalValue(t){
     const d = new Date(t);
@@ -908,6 +971,17 @@
               <button class="btn-save" data-save="${entry.t}">Save Changes</button>
               <button class="btn-cancel" data-cancel="${entry.t}">Cancel</button>
             </div>
+          </div>
+        </div>`;
+      }
+
+      if(entry.refill){
+        const pctFull = Math.max(0, Math.min(100, ((HEIGHT - entry.gap)/HEIGHT)*100));
+        return `<div class="histrow refill" data-t="${entry.t}">
+          <div class="l"><span class="date">${dateStr}</span><span class="meas refillTxt">💧 Tank refilled +${fmt(entry.addedGal || 0)} gal</span><span class="sub2">est. ${entry.gap.toFixed(1)}" gap · ${fmt(pctFull,0)}% full</span></div>
+          <div class="actions">
+            <button class="icon edit" data-edit="${entry.t}" title="Edit">✎</button>
+            <button class="icon del" data-del="${entry.t}" title="Delete">✕</button>
           </div>
         </div>`;
       }
@@ -967,11 +1041,16 @@
         }
 
         history[idx] = {
+          ...history[idx],
           t: newT,
           gap: newGap,
           gallons: (LEN*WID*newGap)/CU_IN_PER_GAL,
           waterHt: Math.max(0, HEIGHT-newGap)
         };
+        if(newT !== origT){
+          deliveries.forEach(d=>{ if(d.readingT === origT) d.readingT = newT; });
+          saveDeliveries(deliveries);
+        }
         editingT = null;
         saveHistory(history);
         renderAll();
@@ -1019,7 +1098,14 @@
     const base = parseFloat(rateBase.value) || 0;
     const stat = parseFloat(rateStat.value) || 0;
     const eaf = parseFloat(rateEaf.value) || 0;
-    const perGallon = (base + stat + eaf) * GAL_TO_M3;
+    let perGallon = (base + stat + eaf) * GAL_TO_M3;
+    const actual = deliveryTotals();
+    if(actual.gallons > 0 && actual.cost > 0){
+      perGallon = actual.cost / actual.gallons;
+      el('usageCostNote').textContent = `Costs use your real average price from ${actual.count} logged ${actual.count===1?'delivery':'deliveries'} (${fmtMoney(perGallon*1000)} per 1,000 gal).`;
+    } else {
+      el('usageCostNote').textContent = 'Costs use the rate fields above. Log a delivery to use what you actually pay.';
+    }
 
     el('avgDayCost').textContent = dayAvg!==null ? fmtMoney(dayAvg*perGallon) : '—';
     el('avgWeekCost').textContent = weekAvg!==null ? fmtMoney(weekAvg*perGallon) : '—';
@@ -1055,7 +1141,7 @@
 
     const y40 = y(HEIGHT-WARN_LOW), y44 = y(HEIGHT-CRIT);
 
-    const dots = sorted.map(e => `<circle cx="${x(e.t).toFixed(1)}" cy="${y(HEIGHT-e.gap).toFixed(1)}" r="2.6" fill="var(--water-glow)" stroke="#04212B" stroke-width="1"/>`).join('');
+    const dots = sorted.map(e => `<circle cx="${x(e.t).toFixed(1)}" cy="${y(HEIGHT-e.gap).toFixed(1)}" r="${e.refill?3.2:2.6}" fill="${e.refill?'var(--safe)':'var(--water-glow)'}" stroke="#04212B" stroke-width="1"/>`).join('');
 
     const firstLabel = new Date(tMin).toLocaleDateString('en-US',{month:'short',day:'numeric'});
     const lastLabel = new Date(tMax).toLocaleDateString('en-US',{month:'short',day:'numeric'});
@@ -1081,6 +1167,270 @@
   function renderAll(){
     renderHistoryList();
     renderUsage();
+    renderDeliveries();
+    refreshDeliveryForm();
+  }
+
+  // ================= DELIVERIES =================
+  const delGallons = el('delGallons');
+  const delCost = el('delCost');
+  const delWhen = el('delWhen');
+  const delPreview = el('delPreview');
+  let delGalTouched = false, delCostTouched = false, delWhenTouched = false;
+
+  // same pricing rules as the main estimate, for any gallon amount
+  function estimateCostFor(gal){
+    if(!(gal > 0)) return 0;
+    const perM3 = (parseFloat(rateBase.value)||0) + (parseFloat(rateStat.value)||0) + (parseFloat(rateEaf.value)||0);
+    const minOrder = parseFloat(minOrderEl.value) || 0;
+    const orderGal = gal < minOrder ? minOrder : gal;
+    let cost = orderGal * GAL_TO_M3 * perM3;
+    if(emergencyToggle.checked) cost += 25;
+    return cost;
+  }
+
+  function deliveryTotals(){
+    const list = (typeof deliveries !== 'undefined' && deliveries) ? deliveries : [];
+    return {
+      count: list.length,
+      gallons: list.reduce((a,d)=>a+(d.gallons||0),0),
+      cost: list.reduce((a,d)=>a+(d.cost||0),0)
+    };
+  }
+
+  // most recent saved reading at or before time t (ignores a given reading id)
+  function readingBefore(t, ignoreT){
+    const sorted = history.filter(h => h.t <= t && h.t !== ignoreT).sort((a,b)=>b.t-a.t);
+    return sorted[0] || null;
+  }
+
+  function refillResult(baseGap, gal){
+    const addIn = (gal * CU_IN_PER_GAL) / (LEN * WID);
+    const raw = baseGap - addIn;
+    const overflowGal = raw < 0 ? (-raw * LEN * WID) / CU_IN_PER_GAL : 0;
+    const newGap = Math.max(0, raw);
+    return { newGap, overflowGal, pctFull: Math.max(0, Math.min(100, ((HEIGHT - newGap)/HEIGHT)*100)) };
+  }
+
+  function suggestedGallons(){
+    const gap = currentInches();
+    if(gap !== null && gap > 0) return (LEN*WID*gap)/CU_IN_PER_GAL;
+    const last = readingBefore(Infinity);
+    if(last && !last.refill && last.gap > 0) return (LEN*WID*last.gap)/CU_IN_PER_GAL;
+    return null;
+  }
+
+  function refreshDeliveryForm(){
+    if(!delGalTouched){
+      const sg = suggestedGallons();
+      delGallons.value = sg ? Math.round(sg) : '';
+    }
+    if(!delCostTouched){
+      const g = parseFloat(delGallons.value);
+      delCost.value = g > 0 ? estimateCostFor(g).toFixed(2) : '';
+    }
+    if(!delWhenTouched){
+      delWhen.value = toDatetimeLocalValue(Date.now());
+    }
+    updateDeliveryPreview();
+  }
+
+  function deliveryTimeFromForm(){
+    if(!delWhenTouched) return Date.now();
+    return delWhen.value ? new Date(delWhen.value).getTime() : Date.now();
+  }
+
+  function updateDeliveryPreview(){
+    const g = parseFloat(delGallons.value);
+    if(!(g > 0)){
+      delPreview.textContent = 'Enter the gallons delivered to preview the refill.';
+      return;
+    }
+    const t = deliveryTimeFromForm();
+    const base = readingBefore(isNaN(t) ? Date.now() : t);
+    const inputGap = currentInches();
+    let baseGap = null, baseLabel = '';
+    if(base){
+      baseGap = base.gap;
+      baseLabel = `last reading ${base.gap.toFixed(1)}" gap (${new Date(base.t).toLocaleDateString('en-US',{month:'short',day:'numeric'})})`;
+    } else if(inputGap !== null){
+      baseGap = inputGap;
+      baseLabel = `the ${inputGap.toFixed(1)}" you typed above`;
+    }
+    if(baseGap === null){
+      delPreview.innerHTML = `No reading to start from yet. The delivery will still be logged — take a measurement afterward to set your level.`;
+      return;
+    }
+    const r = refillResult(baseGap, g);
+    let html = `Starting from ${baseLabel}, <b>${fmt(g)} gal</b> brings the tank to about <b>${r.newGap.toFixed(1)}" gap · ${fmt(r.pctFull,0)}% full</b>.`;
+    if(r.overflowGal > 0.5) html += `<br>That's about ${fmt(r.overflowGal)} gal more than the empty space — tank will show as full.`;
+    delPreview.innerHTML = html;
+  }
+
+  delGallons.addEventListener('input', ()=>{
+    delGalTouched = delGallons.value !== '';
+    if(!delCostTouched){
+      const g = parseFloat(delGallons.value);
+      delCost.value = g > 0 ? estimateCostFor(g).toFixed(2) : '';
+    }
+    updateDeliveryPreview();
+  });
+  delCost.addEventListener('input', ()=>{ delCostTouched = delCost.value !== ''; });
+  delWhen.addEventListener('change', ()=>{ delWhenTouched = true; updateDeliveryPreview(); });
+  [inchesInput, rateBase, rateStat, rateEaf, minOrderEl, emergencyToggle].forEach(i=>{
+    i.addEventListener('input', refreshDeliveryForm);
+    i.addEventListener('change', refreshDeliveryForm);
+  });
+  delGallons.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); delGallons.blur(); } });
+  delCost.addEventListener('keydown', (e)=>{ if(e.key === 'Enter'){ e.preventDefault(); delCost.blur(); } });
+
+  function uniqueTime(t, arr){
+    while(arr.some(x => x.t === t)) t += 1000;
+    return t;
+  }
+
+  // adds (or rebuilds) the "Tank refilled" reading that goes with a delivery
+  function attachRefillReading(d){
+    const base = readingBefore(d.t, d.readingT);
+    let baseGap = base ? base.gap : null;
+    if(baseGap === null && typeof d.baseGap === 'number') baseGap = d.baseGap;
+    if(baseGap === null) return;
+    d.baseGap = baseGap;
+    const r = refillResult(baseGap, d.gallons);
+    let rt = d.t + 1;
+    while(history.some(h => h.t === rt && h.t !== d.readingT)) rt++;
+    const reading = {
+      t: rt, gap: r.newGap,
+      gallons: (LEN*WID*r.newGap)/CU_IN_PER_GAL,
+      waterHt: Math.max(0, HEIGHT - r.newGap),
+      refill: true, deliveryT: d.t, addedGal: d.gallons
+    };
+    const idx = history.findIndex(h => h.t === d.readingT);
+    if(idx !== -1) history[idx] = reading; else history.push(reading);
+    d.readingT = rt;
+  }
+
+  function logDelivery(){
+    const gal = parseFloat(delGallons.value);
+    if(!(gal > 0)){ alert('Enter how many gallons were delivered.'); delGallons.focus(); return; }
+    let t = deliveryTimeFromForm();
+    if(isNaN(t)){ alert('That date/time looks invalid.'); return; }
+    t = uniqueTime(t, deliveries);
+
+    let cost = parseFloat(delCost.value);
+    let estimated = false;
+    if(isNaN(cost) || cost < 0){ cost = estimateCostFor(gal); estimated = true; }
+
+    const d = { t, gallons: gal, cost, estimated };
+    // no saved reading yet? use the number typed in the measurement box as the start point
+    if(!readingBefore(t) && currentInches() !== null) d.baseGap = currentInches();
+    attachRefillReading(d);
+    deliveries.push(d);
+    saveDeliveries(deliveries);
+    saveHistory(history);
+
+    delGalTouched = delCostTouched = delWhenTouched = false;
+    inchesInput.value = '';
+    updateCalc();
+    renderAll();
+
+    const btn = el('delSaveBtn');
+    const orig = btn.innerHTML;
+    btn.textContent = 'Logged ✓ Tank refilled';
+    setTimeout(()=>{ btn.innerHTML = orig; }, 1400);
+  }
+  el('delSaveBtn').addEventListener('click', logDelivery);
+
+  function renderDeliveries(){
+    const list = el('delList');
+    const tot = deliveryTotals();
+    el('delCount').textContent = tot.count + (tot.count===1 ? ' delivery' : ' deliveries');
+    el('delTotalGal').textContent = tot.count ? fmt(tot.gallons) + ' gal' : '—';
+    el('delTotalCost').textContent = tot.count ? fmtMoney(tot.cost) : '—';
+    el('delAvgRate').textContent = tot.gallons > 0 && tot.cost > 0 ? fmtMoney(tot.cost/tot.gallons*1000) : '—';
+
+    if(tot.count === 0){
+      el('delLastNote').textContent = '';
+      list.innerHTML = '<div class="empty">No deliveries logged yet.</div>';
+      return;
+    }
+    const sorted = [...deliveries].sort((a,b)=>b.t-a.t);
+    const last = sorted[0];
+    const daysAgo = Math.floor((Date.now() - last.t)/86400000);
+    const agoStr = daysAgo <= 0 ? 'today' : daysAgo === 1 ? 'yesterday' : daysAgo + ' days ago';
+    el('delLastNote').innerHTML = `Last delivery <b>${agoStr}</b> · average <b>${fmtMoney(tot.cost/tot.count)}</b> per delivery.`;
+
+    list.innerHTML = sorted.map(d=>{
+      const dt = new Date(d.t);
+      const dateStr = dt.toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'}) + ' · ' + dt.toLocaleTimeString('en-US',{hour:'numeric',minute:'2-digit'});
+      if(editingDelT === d.t){
+        return `<div class="histrow editing">
+          <div class="editform">
+            <div class="editrow">
+              <div class="editfield"><label>Gallons</label><input type="number" inputmode="numeric" step="10" min="0" class="edDelGal" value="${d.gallons}"></div>
+              <div class="editfield"><label>Paid (CI$)</label><input type="number" inputmode="decimal" step="0.01" min="0" class="edDelCost" value="${Number(d.cost).toFixed(2)}"></div>
+            </div>
+            <div class="editfield"><label>Date &amp; time</label><input type="datetime-local" class="edDelWhen" value="${toDatetimeLocalValue(d.t)}"></div>
+            <div class="editbtns">
+              <button class="btn-save" data-dsave="${d.t}">Save Changes</button>
+              <button class="btn-cancel" data-dcancel="${d.t}">Cancel</button>
+            </div>
+          </div>
+        </div>`;
+      }
+      const per1k = d.gallons > 0 ? fmtMoney(d.cost/d.gallons*1000) + ' / 1k gal' : '';
+      return `<div class="histrow">
+        <div class="l"><span class="date">${dateStr}</span><span class="meas">${fmt(d.gallons)} gal · ${fmtMoney(d.cost)}${d.estimated?'<span class="estTag">est.</span>':''}</span><span class="sub2">${per1k}</span></div>
+        <div class="actions">
+          <button class="icon edit" data-dedit="${d.t}" title="Edit">✎</button>
+          <button class="icon del" data-ddel="${d.t}" title="Delete">✕</button>
+        </div>
+      </div>`;
+    }).join('');
+
+    list.querySelectorAll('[data-ddel]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const t = parseFloat(btn.getAttribute('data-ddel'));
+        if(!confirm('Delete this delivery? Its "Tank refilled" entry will be removed too.')) return;
+        const d = deliveries.find(x => x.t === t);
+        if(d && d.readingT != null) history = history.filter(h => h.t !== d.readingT);
+        deliveries = deliveries.filter(x => x.t !== t);
+        if(editingDelT === t) editingDelT = null;
+        saveDeliveries(deliveries);
+        saveHistory(history);
+        renderAll();
+      });
+    });
+    list.querySelectorAll('[data-dedit]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ editingDelT = parseFloat(btn.getAttribute('data-dedit')); renderDeliveries(); });
+    });
+    list.querySelectorAll('[data-dcancel]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{ editingDelT = null; renderDeliveries(); });
+    });
+    list.querySelectorAll('[data-dsave]').forEach(btn=>{
+      btn.addEventListener('click', ()=>{
+        const origT = parseFloat(btn.getAttribute('data-dsave'));
+        const row = btn.closest('.histrow');
+        const gal = parseFloat(row.querySelector('.edDelGal').value);
+        const cost = parseFloat(row.querySelector('.edDelCost').value);
+        const whenRaw = row.querySelector('.edDelWhen').value;
+        let newT = (whenRaw && whenRaw !== toDatetimeLocalValue(origT)) ? new Date(whenRaw).getTime() : origT;
+        if(!(gal > 0)){ alert('Gallons must be more than 0.'); return; }
+        if(isNaN(newT)){ alert('That date/time looks invalid.'); return; }
+        const d = deliveries.find(x => x.t === origT);
+        if(!d) return;
+        if(newT !== origT) newT = uniqueTime(newT, deliveries.filter(x => x !== d));
+        d.t = newT;
+        d.gallons = gal;
+        if(!isNaN(cost) && cost >= 0){ d.cost = cost; d.estimated = false; }
+        const linked = history.some(h => h.t === d.readingT);
+        if(linked || typeof d.baseGap === 'number') attachRefillReading(d);
+        editingDelT = null;
+        saveDeliveries(deliveries);
+        saveHistory(history);
+        renderAll();
+      });
+    });
   }
 
   function saveReading(){
@@ -1109,16 +1459,18 @@
   });
 
   el('clearBtn').addEventListener('click', ()=>{
-    if(history.length === 0) return;
-    if(confirm('Clear all saved readings? This cannot be undone (unless you have an exported backup).')){
+    if(history.length === 0 && deliveries.length === 0) return;
+    if(confirm('Clear all saved readings AND deliveries? This cannot be undone (unless you have an exported backup).')){
       history = [];
+      deliveries = [];
       saveHistory(history);
+      saveDeliveries(deliveries);
       renderAll();
     }
   });
 
   el('exportBtn').addEventListener('click', ()=>{
-    const payload = { app: 'tank-replenishment', version: 1, exportedAt: new Date().toISOString(), history };
+    const payload = { app: 'tank-replenishment', version: 2, exportedAt: new Date().toISOString(), history, deliveries };
     const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -1145,13 +1497,26 @@
         const existingTs = new Set(history.map(h=>h.t));
         incoming.forEach(item=>{
           if(item && typeof item.t === 'number' && typeof item.gap === 'number' && !existingTs.has(item.t)){
-            merged.push({ t:item.t, gap:item.gap, gallons: item.gallons ?? (LEN*WID*item.gap/CU_IN_PER_GAL), waterHt: item.waterHt ?? Math.max(0,HEIGHT-item.gap) });
+            const r = { t:item.t, gap:item.gap, gallons: item.gallons ?? (LEN*WID*item.gap/CU_IN_PER_GAL), waterHt: item.waterHt ?? Math.max(0,HEIGHT-item.gap) };
+            if(item.refill){ r.refill = true; r.deliveryT = item.deliveryT; r.addedGal = item.addedGal; }
+            merged.push(r);
           }
         });
         history = merged;
+        let delAdded = 0;
+        if(Array.isArray(data.deliveries)){
+          const existingD = new Set(deliveries.map(d=>d.t));
+          data.deliveries.forEach(d=>{
+            if(d && typeof d.t === 'number' && typeof d.gallons === 'number' && !existingD.has(d.t)){
+              deliveries.push({ t:d.t, gallons:d.gallons, cost: Number(d.cost)||0, estimated: !!d.estimated, baseGap: d.baseGap, readingT: d.readingT });
+              delAdded++;
+            }
+          });
+          saveDeliveries(deliveries);
+        }
         saveHistory(history);
         renderAll();
-        alert('Backup imported — ' + incoming.length + ' reading(s) merged in.');
+        alert('Backup imported — ' + incoming.length + ' reading(s)' + (delAdded ? ' and ' + delAdded + ' deliver' + (delAdded===1?'y':'ies') : '') + ' merged in.');
       }catch(err){
         alert('Could not read that file. Make sure it is a backup exported from this app.');
       }
